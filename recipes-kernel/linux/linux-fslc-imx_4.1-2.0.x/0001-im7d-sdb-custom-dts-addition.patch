@@ -1,26 +1,13 @@
-From b7bb19c323dca10803f979333736a11f96f76ebd Mon Sep 17 00:00:00 2001
+From 03d56d0f317df0a15b8b3ddd773c1ef8d50935fe Mon Sep 17 00:00:00 2001
 From: Prabhakar Patil <prpatil12@gmail.com>
-Date: Sun, 26 Apr 2020 16:45:06 +0530
-Subject: [PATCH] im7d-sdb-custom dts addition
+Date: Sun, 26 Apr 2020 21:48:45 +0530
+Subject: [PATCH] im7d-sdb-custom-dts-addition
 
 ---
- arch/arm/boot/dts/Makefile             |    1 +
  arch/arm/boot/dts/imx7d-sdb-custom.dts | 1188 ++++++++++++++++++++++++
- 2 files changed, 1189 insertions(+)
+ 1 file changed, 1188 insertions(+)
  create mode 100644 arch/arm/boot/dts/imx7d-sdb-custom.dts
 
-diff --git a/arch/arm/boot/dts/Makefile b/arch/arm/boot/dts/Makefile
-index a7435b564eaf..e4e1c71ea239 100644
---- a/arch/arm/boot/dts/Makefile
-+++ b/arch/arm/boot/dts/Makefile
-@@ -445,6 +445,7 @@ dtb-$(CONFIG_SOC_IMX7D) += \
- 	imx7d-12x12-lpddr3-arm2-pcie.dtb \
- 	imx7d-19x19-lpddr2-arm2.dtb \
- 	imx7d-sdb.dtb \
-+	imx7d-sdb-custom.dtb \
- 	imx7d-sdb-epdc.dtb \
- 	imx7d-sdb-gpmi-weim.dtb \
- 	imx7d-sdb-m4.dtb \
 diff --git a/arch/arm/boot/dts/imx7d-sdb-custom.dts b/arch/arm/boot/dts/imx7d-sdb-custom.dts
 new file mode 100644
 index 000000000000..0cef31e1c8f5
