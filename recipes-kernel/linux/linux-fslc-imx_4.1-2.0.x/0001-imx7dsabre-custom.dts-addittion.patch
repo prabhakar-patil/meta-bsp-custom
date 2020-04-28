@@ -1,18 +1,18 @@
-From 03d56d0f317df0a15b8b3ddd773c1ef8d50935fe Mon Sep 17 00:00:00 2001
+From 9378adecadf05bd104ad9024fb8534aa98980ba9 Mon Sep 17 00:00:00 2001
 From: Prabhakar Patil <prpatil12@gmail.com>
-Date: Sun, 26 Apr 2020 21:48:45 +0530
-Subject: [PATCH] im7d-sdb-custom-dts-addition
+Date: Tue, 28 Apr 2020 06:27:50 +0530
+Subject: [PATCH] imx7dsabre-custom.dts addittion
 
 ---
- arch/arm/boot/dts/imx7d-sdb-custom.dts | 1188 ++++++++++++++++++++++++
+ arch/arm/boot/dts/imx7dsabre-custom.dts | 1188 +++++++++++++++++++++++
  1 file changed, 1188 insertions(+)
- create mode 100644 arch/arm/boot/dts/imx7d-sdb-custom.dts
+ create mode 100644 arch/arm/boot/dts/imx7dsabre-custom.dts
 
-diff --git a/arch/arm/boot/dts/imx7d-sdb-custom.dts b/arch/arm/boot/dts/imx7d-sdb-custom.dts
+diff --git a/arch/arm/boot/dts/imx7dsabre-custom.dts b/arch/arm/boot/dts/imx7dsabre-custom.dts
 new file mode 100644
 index 000000000000..0cef31e1c8f5
 --- /dev/null
-+++ b/arch/arm/boot/dts/imx7d-sdb-custom.dts
++++ b/arch/arm/boot/dts/imx7dsabre-custom.dts
 @@ -0,0 +1,1188 @@
 +/*
 + * Copyright (C) 2015 Freescale Semiconductor, Inc.
