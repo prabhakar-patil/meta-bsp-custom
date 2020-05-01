@@ -1,0 +1,914 @@
+From b5f70f3f016c27cd9f82a8022c9b9ca39a8ca1b9 Mon Sep 17 00:00:00 2001
+From: Prabhakar Patil <prpatil12@gmail.com>
+Date: Thu, 30 Apr 2020 06:30:35 +0530
+Subject: [PATCH] imx7dsabre-custom board added to uboot
+
+---
+ arch/arm/mach-imx/mx7/Kconfig               |   8 +
+ board/imx7dsabre-custom/Kconfig             |   9 +
+ board/imx7dsabre-custom/Makefile            |   1 +
+ board/imx7dsabre-custom/imx7dsabre-custom.c | 396 ++++++++++++++++++++
+ board/imx7dsabre-custom/imximage.cfg        | 101 +++++
+ configs/imx7dsabre-custom_defconfig         |  72 ++++
+ include/configs/imx7dsabre-custom.h         | 249 ++++++++++++
+ 7 files changed, 836 insertions(+)
+ create mode 100644 board/imx7dsabre-custom/Kconfig
+ create mode 100644 board/imx7dsabre-custom/Makefile
+ create mode 100644 board/imx7dsabre-custom/imx7dsabre-custom.c
+ create mode 100644 board/imx7dsabre-custom/imximage.cfg
+ create mode 100644 configs/imx7dsabre-custom_defconfig
+ create mode 100644 include/configs/imx7dsabre-custom.h
+
+diff --git a/arch/arm/mach-imx/mx7/Kconfig b/arch/arm/mach-imx/mx7/Kconfig
+index 365501d518..be8ecbc4cd 100644
+--- a/arch/arm/mach-imx/mx7/Kconfig
++++ b/arch/arm/mach-imx/mx7/Kconfig
+@@ -32,6 +32,13 @@ config TARGET_MX7DSABRESD
+ 	select DM
+ 	select DM_THERMAL
+ 
++config TARGET_IMX7DSABRE-CUSTOM
++	bool "imx7dsabre-custom"
++	select BOARD_LATE_INIT
++	select MX7D
++	select DM
++	select DM_THERMAL
++
+ config TARGET_PICO_IMX7D
+ 	bool "pico-imx7d"
+ 	select BOARD_LATE_INIT
+@@ -60,6 +67,7 @@ config SYS_SOC
+ 
+ source "board/compulab/cl-som-imx7/Kconfig"
+ source "board/freescale/mx7dsabresd/Kconfig"
++source "board/imx7dsabre-custom/Kconfig"
+ source "board/technexion/pico-imx7d/Kconfig"
+ source "board/toradex/colibri_imx7/Kconfig"
+ source "board/warp7/Kconfig"
+diff --git a/board/imx7dsabre-custom/Kconfig b/board/imx7dsabre-custom/Kconfig
+new file mode 100644
+index 0000000000..db2c269c48
+--- /dev/null
++++ b/board/imx7dsabre-custom/Kconfig
+@@ -0,0 +1,9 @@
++if TARGET_IMX7DSABRE-CUSTOM
++
++config SYS_BOARD
++	default "imx7dsabre-custom"
++
++config SYS_CONFIG_NAME
++	default "imx7dsabre-custom"
++
++endif
+diff --git a/board/imx7dsabre-custom/Makefile b/board/imx7dsabre-custom/Makefile
+new file mode 100644
+index 0000000000..df5707db8f
+--- /dev/null
++++ b/board/imx7dsabre-custom/Makefile
+@@ -0,0 +1 @@
++obj-y  := imx7dsabre-custom.o
+diff --git a/board/imx7dsabre-custom/imx7dsabre-custom.c b/board/imx7dsabre-custom/imx7dsabre-custom.c
+new file mode 100644
+index 0000000000..5819b1825d
+--- /dev/null
++++ b/board/imx7dsabre-custom/imx7dsabre-custom.c
+@@ -0,0 +1,396 @@
++/*
++ * Copyright (C) 2015 Freescale Semiconductor, Inc.
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <asm/arch/clock.h>
++#include <asm/arch/imx-regs.h>
++#include <asm/arch/mx7-pins.h>
++#include <asm/arch/sys_proto.h>
++#include <asm/gpio.h>
++#include <asm/mach-imx/iomux-v3.h>
++#include <asm/io.h>
++#include <linux/sizes.h>
++#include <common.h>
++#include <fsl_esdhc.h>
++#include <mmc.h>
++#include <miiphy.h>
++#include <netdev.h>
++#include <power/pmic.h>
++#include <power/pfuze3000_pmic.h>
++#include "../common/pfuze.h"
++#include <i2c.h>
++#include <asm/mach-imx/mxc_i2c.h>
++#include <asm/arch/crm_regs.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++#define UART_PAD_CTRL  (PAD_CTL_DSE_3P3V_49OHM | \
++	PAD_CTL_PUS_PU100KOHM | PAD_CTL_HYS)
++
++#define ENET_PAD_CTRL  (PAD_CTL_PUS_PU100KOHM | PAD_CTL_DSE_3P3V_49OHM)
++#define ENET_PAD_CTRL_MII  (PAD_CTL_DSE_3P3V_32OHM)
++
++#define ENET_RX_PAD_CTRL  (PAD_CTL_PUS_PU100KOHM | PAD_CTL_DSE_3P3V_49OHM)
++
++#define LCD_PAD_CTRL    (PAD_CTL_HYS | PAD_CTL_PUS_PU100KOHM | \
++	PAD_CTL_DSE_3P3V_49OHM)
++
++#define QSPI_PAD_CTRL	\
++	(PAD_CTL_DSE_3P3V_49OHM | PAD_CTL_PUE | PAD_CTL_PUS_PU47KOHM)
++
++#define NAND_PAD_CTRL (PAD_CTL_DSE_3P3V_49OHM | PAD_CTL_SRE_SLOW | PAD_CTL_HYS)
++
++#define SPI_PAD_CTRL \
++  (PAD_CTL_HYS | PAD_CTL_DSE_3P3V_49OHM | PAD_CTL_SRE_FAST)
++
++#define NAND_PAD_READY0_CTRL (PAD_CTL_DSE_3P3V_49OHM | PAD_CTL_PUS_PU5KOHM)
++
++#ifdef CONFIG_MXC_SPI
++static iomux_v3_cfg_t const ecspi3_pads[] = {
++    MX7D_PAD_SAI2_RX_DATA__ECSPI3_SCLK | MUX_PAD_CTRL(SPI_PAD_CTRL),
++    MX7D_PAD_SAI2_TX_SYNC__ECSPI3_MISO | MUX_PAD_CTRL(SPI_PAD_CTRL),
++    MX7D_PAD_SAI2_TX_BCLK__ECSPI3_MOSI | MUX_PAD_CTRL(SPI_PAD_CTRL),
++    MX7D_PAD_SAI2_TX_DATA__GPIO6_IO22 | MUX_PAD_CTRL(NO_PAD_CTRL),
++};
++
++int board_spi_cs_gpio(unsigned bus, unsigned cs)
++{
++         return (bus == 2 && cs == 0) ? (IMX_GPIO_NR(6, 22)) : -1;
++}
++
++static void setup_spi(void)
++{
++         imx_iomux_v3_setup_multiple_pads(ecspi3_pads, ARRAY_SIZE(ecspi3_pads));
++}
++#endif
++
++int dram_init(void)
++{
++	gd->ram_size = PHYS_SDRAM_SIZE;
++
++	return 0;
++}
++
++static iomux_v3_cfg_t const wdog_pads[] = {
++	MX7D_PAD_GPIO1_IO00__WDOG1_WDOG_B | MUX_PAD_CTRL(NO_PAD_CTRL),
++};
++
++static iomux_v3_cfg_t const uart1_pads[] = {
++	MX7D_PAD_UART1_TX_DATA__UART1_DCE_TX | MUX_PAD_CTRL(UART_PAD_CTRL),
++	MX7D_PAD_UART1_RX_DATA__UART1_DCE_RX | MUX_PAD_CTRL(UART_PAD_CTRL),
++};
++
++#ifdef CONFIG_NAND_MXS
++static iomux_v3_cfg_t const gpmi_pads[] = {
++	MX7D_PAD_SD3_DATA0__NAND_DATA00 | MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SD3_DATA1__NAND_DATA01 | MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SD3_DATA2__NAND_DATA02 | MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SD3_DATA3__NAND_DATA03 | MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SD3_DATA4__NAND_DATA04 | MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SD3_DATA5__NAND_DATA05 | MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SD3_DATA6__NAND_DATA06 | MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SD3_DATA7__NAND_DATA07 | MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SD3_CLK__NAND_CLE	| MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SD3_CMD__NAND_ALE	| MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SD3_STROBE__NAND_RE_B	| MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SD3_RESET_B__NAND_WE_B	| MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SAI1_MCLK__NAND_WP_B	| MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SAI1_RX_BCLK__NAND_CE3_B	| MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SAI1_RX_SYNC__NAND_CE2_B	| MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SAI1_RX_DATA__NAND_CE1_B	| MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SAI1_TX_BCLK__NAND_CE0_B	| MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SAI1_TX_SYNC__NAND_DQS	| MUX_PAD_CTRL(NAND_PAD_CTRL),
++	MX7D_PAD_SAI1_TX_DATA__NAND_READY_B	| MUX_PAD_CTRL(NAND_PAD_READY0_CTRL),
++};
++
++static void setup_gpmi_nand(void)
++{
++	imx_iomux_v3_setup_multiple_pads(gpmi_pads, ARRAY_SIZE(gpmi_pads));
++
++	/* NAND_USDHC_BUS_CLK is set in rom */
++	set_clk_nand();
++}
++#endif
++
++#ifdef CONFIG_VIDEO_MXS
++static iomux_v3_cfg_t const lcd_pads[] = {
++	MX7D_PAD_LCD_CLK__LCD_CLK | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_ENABLE__LCD_ENABLE | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_HSYNC__LCD_HSYNC | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_VSYNC__LCD_VSYNC | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA00__LCD_DATA0 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA01__LCD_DATA1 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA02__LCD_DATA2 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA03__LCD_DATA3 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA04__LCD_DATA4 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA05__LCD_DATA5 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA06__LCD_DATA6 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA07__LCD_DATA7 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA08__LCD_DATA8 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA09__LCD_DATA9 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA10__LCD_DATA10 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA11__LCD_DATA11 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA12__LCD_DATA12 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA13__LCD_DATA13 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA14__LCD_DATA14 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA15__LCD_DATA15 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA16__LCD_DATA16 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA17__LCD_DATA17 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA18__LCD_DATA18 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA19__LCD_DATA19 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA20__LCD_DATA20 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA21__LCD_DATA21 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA22__LCD_DATA22 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++	MX7D_PAD_LCD_DATA23__LCD_DATA23 | MUX_PAD_CTRL(LCD_PAD_CTRL),
++
++	MX7D_PAD_LCD_RESET__GPIO3_IO4	| MUX_PAD_CTRL(LCD_PAD_CTRL),
++};
++
++static iomux_v3_cfg_t const pwm_pads[] = {
++	/* Use GPIO for Brightness adjustment, duty cycle = period */
++	MX7D_PAD_GPIO1_IO01__GPIO1_IO1 | MUX_PAD_CTRL(NO_PAD_CTRL),
++};
++
++static int setup_lcd(void)
++{
++	imx_iomux_v3_setup_multiple_pads(lcd_pads, ARRAY_SIZE(lcd_pads));
++
++	imx_iomux_v3_setup_multiple_pads(pwm_pads, ARRAY_SIZE(pwm_pads));
++
++	/* Reset LCD */
++	gpio_request(IMX_GPIO_NR(3, 4), "lcd reset");
++	gpio_direction_output(IMX_GPIO_NR(3, 4) , 0);
++	udelay(500);
++	gpio_direction_output(IMX_GPIO_NR(3, 4) , 1);
++
++	/* Set Brightness to high */
++	gpio_request(IMX_GPIO_NR(1, 1), "lcd backlight");
++	gpio_direction_output(IMX_GPIO_NR(1, 1) , 1);
++
++	return 0;
++}
++#endif
++
++#ifdef CONFIG_FEC_MXC
++static iomux_v3_cfg_t const fec1_pads[] = {
++	MX7D_PAD_ENET1_RGMII_RX_CTL__ENET1_RGMII_RX_CTL | MUX_PAD_CTRL(ENET_RX_PAD_CTRL),
++	MX7D_PAD_ENET1_RGMII_RD0__ENET1_RGMII_RD0 | MUX_PAD_CTRL(ENET_RX_PAD_CTRL),
++	MX7D_PAD_ENET1_RGMII_RD1__ENET1_RGMII_RD1 | MUX_PAD_CTRL(ENET_RX_PAD_CTRL),
++	MX7D_PAD_ENET1_RGMII_RD2__ENET1_RGMII_RD2 | MUX_PAD_CTRL(ENET_RX_PAD_CTRL),
++	MX7D_PAD_ENET1_RGMII_RD3__ENET1_RGMII_RD3 | MUX_PAD_CTRL(ENET_RX_PAD_CTRL),
++	MX7D_PAD_ENET1_RGMII_RXC__ENET1_RGMII_RXC | MUX_PAD_CTRL(ENET_RX_PAD_CTRL),
++	MX7D_PAD_ENET1_RGMII_TX_CTL__ENET1_RGMII_TX_CTL | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX7D_PAD_ENET1_RGMII_TD0__ENET1_RGMII_TD0 | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX7D_PAD_ENET1_RGMII_TD1__ENET1_RGMII_TD1 | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX7D_PAD_ENET1_RGMII_TD2__ENET1_RGMII_TD2 | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX7D_PAD_ENET1_RGMII_TD3__ENET1_RGMII_TD3 | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX7D_PAD_ENET1_RGMII_TXC__ENET1_RGMII_TXC | MUX_PAD_CTRL(ENET_PAD_CTRL),
++	MX7D_PAD_GPIO1_IO10__ENET1_MDIO | MUX_PAD_CTRL(ENET_PAD_CTRL_MII),
++	MX7D_PAD_GPIO1_IO11__ENET1_MDC | MUX_PAD_CTRL(ENET_PAD_CTRL_MII),
++};
++
++static void setup_iomux_fec(void)
++{
++	imx_iomux_v3_setup_multiple_pads(fec1_pads, ARRAY_SIZE(fec1_pads));
++}
++#endif
++
++static void setup_iomux_uart(void)
++{
++	imx_iomux_v3_setup_multiple_pads(uart1_pads, ARRAY_SIZE(uart1_pads));
++}
++
++int board_mmc_get_env_dev(int devno)
++{
++	if (devno == 2)
++		devno--;
++
++	return devno;
++}
++
++int mmc_map_to_kernel_blk(int dev_no)
++{
++	if (dev_no == 1)
++		dev_no++;
++
++	return dev_no;
++}
++
++#ifdef CONFIG_FEC_MXC
++int board_eth_init(bd_t *bis)
++{
++	int ret;
++	unsigned int gpio;
++
++	ret = gpio_lookup_name("gpio_spi@0_5", NULL, NULL, &gpio);
++	if (ret) {
++		printf("GPIO: 'gpio_spi@0_5' not found\n");
++		return -ENODEV;
++	}
++
++	ret = gpio_request(gpio, "fec_rst");
++	if (ret && ret != -EBUSY) {
++		printf("gpio: requesting pin %u failed\n", gpio);
++		return ret;
++	}
++
++	gpio_direction_output(gpio, 0);
++	udelay(500);
++	gpio_direction_output(gpio, 1);
++
++	setup_iomux_fec();
++
++	ret = fecmxc_initialize_multi(bis, 0,
++		CONFIG_FEC_MXC_PHYADDR, IMX_FEC_BASE);
++	if (ret)
++		printf("FEC1 MXC: %s:failed\n", __func__);
++
++	return ret;
++}
++
++static int setup_fec(void)
++{
++	struct iomuxc_gpr_base_regs *const iomuxc_gpr_regs
++		= (struct iomuxc_gpr_base_regs *) IOMUXC_GPR_BASE_ADDR;
++
++	/* Use 125M anatop REF_CLK1 for ENET1, clear gpr1[13], gpr1[17]*/
++	clrsetbits_le32(&iomuxc_gpr_regs->gpr[1],
++		(IOMUXC_GPR_GPR1_GPR_ENET1_TX_CLK_SEL_MASK |
++		 IOMUXC_GPR_GPR1_GPR_ENET1_CLK_DIR_MASK), 0);
++
++	return set_clk_enet(ENET_125MHZ);
++}
++
++
++int board_phy_config(struct phy_device *phydev)
++{
++	/* enable rgmii rxc skew and phy mode select to RGMII copper */
++	phy_write(phydev, MDIO_DEVAD_NONE, 0x1e, 0x21);
++	phy_write(phydev, MDIO_DEVAD_NONE, 0x1f, 0x7ea8);
++	phy_write(phydev, MDIO_DEVAD_NONE, 0x1e, 0x2f);
++	phy_write(phydev, MDIO_DEVAD_NONE, 0x1f, 0x71b7);
++
++	if (phydev->drv->config)
++		phydev->drv->config(phydev);
++	return 0;
++}
++#endif
++
++#ifdef CONFIG_FSL_QSPI
++static iomux_v3_cfg_t const quadspi_pads[] = {
++	MX7D_PAD_EPDC_DATA00__QSPI_A_DATA0 | MUX_PAD_CTRL(QSPI_PAD_CTRL),
++	MX7D_PAD_EPDC_DATA01__QSPI_A_DATA1 | MUX_PAD_CTRL(QSPI_PAD_CTRL),
++	MX7D_PAD_EPDC_DATA02__QSPI_A_DATA2 | MUX_PAD_CTRL(QSPI_PAD_CTRL),
++	MX7D_PAD_EPDC_DATA03__QSPI_A_DATA3 | MUX_PAD_CTRL(QSPI_PAD_CTRL),
++	MX7D_PAD_EPDC_DATA05__QSPI_A_SCLK  | MUX_PAD_CTRL(QSPI_PAD_CTRL),
++	MX7D_PAD_EPDC_DATA06__QSPI_A_SS0_B | MUX_PAD_CTRL(QSPI_PAD_CTRL),
++};
++
++int board_qspi_init(void)
++{
++	/* Set the iomux */
++	imx_iomux_v3_setup_multiple_pads(quadspi_pads,
++					 ARRAY_SIZE(quadspi_pads));
++
++	/* Set the clock */
++	set_clk_qspi();
++
++	return 0;
++}
++#endif
++
++int board_early_init_f(void)
++{
++	setup_iomux_uart();
++
++	return 0;
++}
++
++int board_init(void)
++{
++	/* address of boot parameters */
++	gd->bd->bi_boot_params = PHYS_SDRAM + 0x100;
++
++#ifdef CONFIG_FEC_MXC
++	setup_fec();
++#endif
++
++#ifdef CONFIG_NAND_MXS
++	setup_gpmi_nand();
++#endif
++
++#ifdef CONFIG_VIDEO_MXS
++	setup_lcd();
++#endif
++
++#ifdef CONFIG_FSL_QSPI
++	board_qspi_init();
++#endif
++
++#ifdef CONFIG_MXC_SPI
++       setup_spi();
++#endif
++
++	return 0;
++}
++
++#ifdef CONFIG_DM_PMIC
++int power_init_board(void)
++{
++	struct udevice *dev;
++	int ret, dev_id, rev_id;
++
++	ret = pmic_get("pfuze3000", &dev);
++	if (ret == -ENODEV)
++		return 0;
++	if (ret != 0)
++		return ret;
++
++	dev_id = pmic_reg_read(dev, PFUZE3000_DEVICEID);
++	rev_id = pmic_reg_read(dev, PFUZE3000_REVID);
++	printf("PMIC: PFUZE3000 DEV_ID=0x%x REV_ID=0x%x\n", dev_id, rev_id);
++
++	pmic_clrsetbits(dev, PFUZE3000_LDOGCTL, 0, 1);
++
++	/*
++	 * Set the voltage of VLDO4 output to 2.8V which feeds
++	 * the MIPI DSI and MIPI CSI inputs.
++	 */
++	pmic_clrsetbits(dev, PFUZE3000_VLD4CTL, 0xF, 0xA);
++
++	return 0;
++}
++#endif
++
++int board_late_init(void)
++{
++	struct wdog_regs *wdog = (struct wdog_regs *)WDOG1_BASE_ADDR;
++
++	imx_iomux_v3_setup_multiple_pads(wdog_pads, ARRAY_SIZE(wdog_pads));
++
++	set_wdog_reset(wdog);
++
++	/*
++	 * Do not assert internal WDOG_RESET_B_DEB(controlled by bit 4),
++	 * since we use PMIC_PWRON to reset the board.
++	 */
++	clrsetbits_le16(&wdog->wcr, 0, 0x10);
++
++	return 0;
++}
++
++int checkboard(void)
++{
++	char *mode;
++
++	if (IS_ENABLED(CONFIG_ARMV7_BOOT_SEC_DEFAULT))
++		mode = "secure";
++	else
++		mode = "non-secure";
++
++	printf("Board: i.MX7D SABRESD in %s mode\n", mode);
++
++	return 0;
++}
+diff --git a/board/imx7dsabre-custom/imximage.cfg b/board/imx7dsabre-custom/imximage.cfg
+new file mode 100644
+index 0000000000..c2b3a8c9c4
+--- /dev/null
++++ b/board/imx7dsabre-custom/imximage.cfg
+@@ -0,0 +1,101 @@
++/*
++ * Copyright (C) 2015 Freescale Semiconductor, Inc.
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ *
++ * Refer doc/README.imximage for more details about how-to configure
++ * and create imximage boot image
++ *
++ * The syntax is taken as close as possible with the kwbimage
++ */
++
++#define __ASSEMBLY__
++#include <config.h>
++
++/* image version */
++
++IMAGE_VERSION 2
++
++/*
++ * Boot Device : sd
++ */
++
++BOOT_FROM	sd
++
++/*
++ * Secure boot support
++ */
++#ifdef CONFIG_SECURE_BOOT
++CSF CONFIG_CSF_SIZE
++#endif
++
++/*
++ * Device Configuration Data (DCD)
++ *
++ * Each entry must have the format:
++ * Addr-type           Address        Value
++ *
++ * where:
++ *	Addr-type register length (1,2 or 4 bytes)
++ *	Address	  absolute address of the register
++ *	value	  value to be stored in the register
++ */
++
++DATA 4 0x30340004 0x4F400005
++
++DATA 4 0x30391000 0x00000002
++DATA 4 0x307a0000 0x01040001
++DATA 4 0x307a01a0 0x80400003
++DATA 4 0x307a01a4 0x00100020
++DATA 4 0x307a01a8 0x80100004
++DATA 4 0x307a0064 0x00400046
++DATA 4 0x307a0490 0x00000001
++DATA 4 0x307a00d0 0x00020083
++DATA 4 0x307a00d4 0x00690000
++DATA 4 0x307a00dc 0x09300004
++DATA 4 0x307a00e0 0x04080000
++DATA 4 0x307a00e4 0x00100004
++DATA 4 0x307a00f4 0x0000033f
++DATA 4 0x307a0100 0x09081109
++DATA 4 0x307a0104 0x0007020d
++DATA 4 0x307a0108 0x03040407
++DATA 4 0x307a010c 0x00002006
++DATA 4 0x307a0110 0x04020205
++DATA 4 0x307a0114 0x03030202
++DATA 4 0x307a0120 0x00000803
++DATA 4 0x307a0180 0x00800020
++DATA 4 0x307a0184 0x02000100
++DATA 4 0x307a0190 0x02098204
++DATA 4 0x307a0194 0x00030303
++DATA 4 0x307a0200 0x00000016
++DATA 4 0x307a0204 0x00171717
++DATA 4 0x307a0214 0x04040404
++DATA 4 0x307a0218 0x0f040404
++DATA 4 0x307a0240 0x06000604
++DATA 4 0x307a0244 0x00000001
++DATA 4 0x30391000 0x00000000
++DATA 4 0x30790000 0x17420f40
++DATA 4 0x30790004 0x10210100
++DATA 4 0x30790010 0x00060807
++DATA 4 0x307900b0 0x1010007e
++DATA 4 0x3079009c 0x00000d6e
++DATA 4 0x30790020 0x08080808
++DATA 4 0x30790030 0x08080808
++DATA 4 0x30790050 0x01000010
++DATA 4 0x30790050 0x00000010
++
++DATA 4 0x307900c0 0x0e407304
++DATA 4 0x307900c0 0x0e447304
++DATA 4 0x307900c0 0x0e447306
++
++CHECK_BITS_SET 4 0x307900c4 0x1
++
++DATA 4 0x307900c0 0x0e447304
++DATA 4 0x307900c0 0x0e407304
++
++DATA 4 0x30384130 0x00000000
++DATA 4 0x30340020 0x00000178
++DATA 4 0x30384130 0x00000002
++DATA 4 0x30790018 0x0000000f
++
++CHECK_BITS_SET 4 0x307a0004 0x1
+diff --git a/configs/imx7dsabre-custom_defconfig b/configs/imx7dsabre-custom_defconfig
+new file mode 100644
+index 0000000000..e562811a44
+--- /dev/null
++++ b/configs/imx7dsabre-custom_defconfig
+@@ -0,0 +1,72 @@
++CONFIG_ARM=y
++CONFIG_ARCH_MX7=y
++CONFIG_TARGET_MX7DSABRESD=y
++# CONFIG_ARMV7_VIRT is not set
++CONFIG_IMX_RDC=y
++CONFIG_IMX_BOOTAUX=y
++# CONFIG_CMD_BMODE is not set
++CONFIG_DEFAULT_DEVICE_TREE="imx7dsabre-custom"
++CONFIG_SYS_EXTRA_OPTIONS="IMX_CONFIG=board/imx7dsabre-custom/imximage.cfg"
++CONFIG_BOOTDELAY=3
++# CONFIG_CONSOLE_MUX is not set
++CONFIG_SYS_CONSOLE_IS_IN_ENV=y
++CONFIG_HUSH_PARSER=y
++# CONFIG_CMD_BOOTD is not set
++CONFIG_CMD_BOOTZ=y
++# CONFIG_CMD_IMI is not set
++# CONFIG_CMD_XIMG is not set
++# CONFIG_CMD_EXPORTENV is not set
++# CONFIG_CMD_IMPORTENV is not set
++CONFIG_CMD_MEMTEST=y
++CONFIG_CMD_DFU=y
++CONFIG_CMD_GPIO=y
++CONFIG_CMD_I2C=y
++CONFIG_CMD_MMC=y
++CONFIG_CMD_USB=y
++CONFIG_CMD_USB_MASS_STORAGE=y
++CONFIG_CMD_DHCP=y
++CONFIG_CMD_MII=y
++CONFIG_CMD_PING=y
++CONFIG_CMD_BMP=y
++CONFIG_CMD_CACHE=y
++CONFIG_CMD_PMIC=y
++CONFIG_CMD_REGULATOR=y
++CONFIG_CMD_EXT2=y
++CONFIG_CMD_EXT4=y
++CONFIG_CMD_EXT4_WRITE=y
++CONFIG_CMD_FAT=y
++CONFIG_OF_CONTROL=y
++CONFIG_DFU_MMC=y
++CONFIG_DFU_RAM=y
++CONFIG_DM_GPIO=y
++CONFIG_DM_74X164=y
++CONFIG_DM_I2C=y
++CONFIG_DM_MMC=y
++CONFIG_SPI_FLASH=y
++CONFIG_SPI_FLASH_EON=y
++CONFIG_PHYLIB=y
++CONFIG_PINCTRL=y
++CONFIG_PINCTRL_IMX7=y
++CONFIG_DM_PMIC=y
++CONFIG_DM_PMIC_PFUZE100=y
++CONFIG_DM_REGULATOR=y
++CONFIG_DM_REGULATOR_PFUZE100=y
++CONFIG_DM_REGULATOR_FIXED=y
++CONFIG_DM_REGULATOR_GPIO=y
++CONFIG_DM_SPI=y
++CONFIG_SOFT_SPI=y
++CONFIG_USB=y
++CONFIG_DM_USB=y
++CONFIG_USB_EHCI_HCD=y
++CONFIG_MXC_USB_OTG_HACTIVE=y
++CONFIG_USB_STORAGE=y
++CONFIG_USB_GADGET=y
++CONFIG_USB_GADGET_MANUFACTURER="FSL"
++CONFIG_USB_GADGET_VENDOR_NUM=0x0525
++CONFIG_USB_GADGET_PRODUCT_NUM=0xa4a5
++CONFIG_CI_UDC=y
++CONFIG_USB_GADGET_DOWNLOAD=y
++CONFIG_USB_HOST_ETHER=y
++CONFIG_USB_ETHER_ASIX=y
++CONFIG_VIDEO=y
++CONFIG_ERRNO_STR=y
+diff --git a/include/configs/imx7dsabre-custom.h b/include/configs/imx7dsabre-custom.h
+new file mode 100644
+index 0000000000..593bf38d7e
+--- /dev/null
++++ b/include/configs/imx7dsabre-custom.h
+@@ -0,0 +1,249 @@
++/*
++ * Copyright (C) 2015 Freescale Semiconductor, Inc.
++ *
++ * Configuration settings for the Freescale i.MX7D SABRESD board.
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __MX7D_SABRESD_CONFIG_H
++#define __MX7D_SABRESD_CONFIG_H
++
++#include "mx7_common.h"
++
++#define CONFIG_DBG_MONITOR
++#define PHYS_SDRAM_SIZE			SZ_1G
++
++#define CONFIG_MXC_UART_BASE            UART1_IPS_BASE_ADDR
++
++/* Size of malloc() pool */
++#define CONFIG_SYS_MALLOC_LEN		(32 * SZ_1M)
++
++/* Network */
++#define CONFIG_FEC_MXC
++#define CONFIG_MII
++#define CONFIG_FEC_XCV_TYPE             RGMII
++#define CONFIG_ETHPRIME                 "FEC"
++#define CONFIG_FEC_MXC_PHYADDR          0
++
++#define CONFIG_PHY_BROADCOM
++/* ENET1 */
++#define IMX_FEC_BASE			ENET_IPS_BASE_ADDR
++
++/* MMC Config*/
++#define CONFIG_SYS_FSL_ESDHC_ADDR       0
++
++#undef CONFIG_BOOTM_NETBSD
++#undef CONFIG_BOOTM_PLAN9
++#undef CONFIG_BOOTM_RTEMS
++
++/* I2C configs */
++#define CONFIG_SYS_I2C_MXC
++#define CONFIG_SYS_I2C_SPEED		100000
++
++#define CONFIG_SUPPORT_EMMC_BOOT	/* eMMC specific */
++#define CONFIG_SYS_MMC_IMG_LOAD_PART	1
++
++#ifdef CONFIG_IMX_BOOTAUX
++/* Set to QSPI1 A flash at default */
++#define CONFIG_SYS_AUXCORE_BOOTDATA 0x60000000
++
++#define UPDATE_M4_ENV \
++	"m4image=m4_qspi.bin\0" \
++	"loadm4image=fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} ${m4image}\0" \
++	"update_m4_from_sd=" \
++		"if sf probe 0:0; then " \
++			"if run loadm4image; then " \
++				"setexpr fw_sz ${filesize} + 0xffff; " \
++				"setexpr fw_sz ${fw_sz} / 0x10000; "	\
++				"setexpr fw_sz ${fw_sz} * 0x10000; "	\
++				"sf erase 0x0 ${fw_sz}; " \
++				"sf write ${loadaddr} 0x0 ${filesize}; " \
++			"fi; " \
++		"fi\0" \
++	"m4boot=sf probe 0:0; bootaux "__stringify(CONFIG_SYS_AUXCORE_BOOTDATA)"\0"
++#else
++#define UPDATE_M4_ENV ""
++#endif
++
++#define CONFIG_MFG_ENV_SETTINGS \
++	"mfgtool_args=setenv bootargs console=${console},${baudrate} " \
++		"rdinit=/linuxrc " \
++		"g_mass_storage.stall=0 g_mass_storage.removable=1 " \
++		"g_mass_storage.idVendor=0x066F g_mass_storage.idProduct=0x37FF "\
++		"g_mass_storage.iSerialNumber=\"\" "\
++		"clk_ignore_unused "\
++		"\0" \
++	"initrd_addr=0x83800000\0" \
++	"initrd_high=0xffffffff\0" \
++	"bootcmd_mfg=run mfgtool_args;bootz ${loadaddr} ${initrd_addr} ${fdt_addr};\0" \
++
++#define CONFIG_DFU_ENV_SETTINGS \
++	"dfu_alt_info=image raw 0 0x800000;"\
++		"u-boot raw 0 0x4000;"\
++		"bootimg part 0 1;"\
++		"rootfs part 0 2\0" \
++
++#define CONFIG_EXTRA_ENV_SETTINGS \
++	UPDATE_M4_ENV \
++	CONFIG_MFG_ENV_SETTINGS \
++	CONFIG_DFU_ENV_SETTINGS \
++	"script=boot.scr\0" \
++	"image=zImage\0" \
++	"console=ttymxc0\0" \
++	"fdt_high=0xffffffff\0" \
++	"initrd_high=0xffffffff\0" \
++	"fdt_file=imx7d-sdb.dtb\0" \
++	"fdt_addr=0x83000000\0" \
++	"boot_fdt=try\0" \
++	"ip_dyn=yes\0" \
++	"videomode=video=ctfb:x:480,y:272,depth:24,pclk:108695,le:8,ri:4,up:2,lo:4,hs:41,vs:10,sync:0,vmode:0\0" \
++	"mmcdev="__stringify(CONFIG_SYS_MMC_ENV_DEV)"\0" \
++	"mmcpart=" __stringify(CONFIG_SYS_MMC_IMG_LOAD_PART) "\0" \
++	"mmcroot=" CONFIG_MMCROOT " rootwait rw\0" \
++	"mmcautodetect=yes\0" \
++	"mmcargs=setenv bootargs console=${console},${baudrate} " \
++		"root=${mmcroot}\0" \
++	"loadbootscript=" \
++		"fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} ${script};\0" \
++	"bootscript=echo Running bootscript from mmc ...; " \
++		"source\0" \
++	"loadimage=fatload mmc ${mmcdev}:${mmcpart} ${loadaddr} ${image}\0" \
++	"loadfdt=fatload mmc ${mmcdev}:${mmcpart} ${fdt_addr} ${fdt_file}\0" \
++	"mmcboot=echo Booting from mmc ...; " \
++		"run mmcargs; " \
++		"if test ${boot_fdt} = yes || test ${boot_fdt} = try; then " \
++			"if run loadfdt; then " \
++				"bootz ${loadaddr} - ${fdt_addr}; " \
++			"else " \
++				"if test ${boot_fdt} = try; then " \
++					"bootz; " \
++				"else " \
++					"echo WARN: Cannot load the DT; " \
++				"fi; " \
++			"fi; " \
++		"else " \
++			"bootz; " \
++		"fi;\0" \
++	"netargs=setenv bootargs console=${console},${baudrate} " \
++		"root=/dev/nfs " \
++	"ip=dhcp nfsroot=${serverip}:${nfsroot},v3,tcp\0" \
++		"netboot=echo Booting from net ...; " \
++		"run netargs; " \
++		"if test ${ip_dyn} = yes; then " \
++			"setenv get_cmd dhcp; " \
++		"else " \
++			"setenv get_cmd tftp; " \
++		"fi; " \
++		"${get_cmd} ${image}; " \
++		"if test ${boot_fdt} = yes || test ${boot_fdt} = try; then " \
++			"if ${get_cmd} ${fdt_addr} ${fdt_file}; then " \
++				"bootz ${loadaddr} - ${fdt_addr}; " \
++			"else " \
++				"if test ${boot_fdt} = try; then " \
++					"bootz; " \
++				"else " \
++					"echo WARN: Cannot load the DT; " \
++				"fi; " \
++			"fi; " \
++		"else " \
++			"bootz; " \
++		"fi;\0"
++
++#define CONFIG_BOOTCOMMAND \
++	   "mmc dev ${mmcdev};" \
++	   "mmc dev ${mmcdev}; if mmc rescan; then " \
++		   "if run loadbootscript; then " \
++			   "run bootscript; " \
++		   "else " \
++			   "if run loadimage; then " \
++				   "run mmcboot; " \
++			   "else run netboot; " \
++			   "fi; " \
++		   "fi; " \
++	   "else run netboot; fi"
++
++#define CONFIG_SYS_MEMTEST_START	0x80000000
++#define CONFIG_SYS_MEMTEST_END		(CONFIG_SYS_MEMTEST_START + 0x20000000)
++
++#define CONFIG_SYS_LOAD_ADDR		CONFIG_LOADADDR
++#define CONFIG_SYS_HZ			1000
++
++/* Physical Memory Map */
++#define CONFIG_NR_DRAM_BANKS		1
++#define PHYS_SDRAM			MMDC0_ARB_BASE_ADDR
++
++#define CONFIG_SYS_SDRAM_BASE		PHYS_SDRAM
++#define CONFIG_SYS_INIT_RAM_ADDR	IRAM_BASE_ADDR
++#define CONFIG_SYS_INIT_RAM_SIZE	IRAM_SIZE
++
++#define CONFIG_SYS_INIT_SP_OFFSET \
++	(CONFIG_SYS_INIT_RAM_SIZE - GENERATED_GBL_DATA_SIZE)
++#define CONFIG_SYS_INIT_SP_ADDR \
++	(CONFIG_SYS_INIT_RAM_ADDR + CONFIG_SYS_INIT_SP_OFFSET)
++
++/* environment organization */
++#define CONFIG_ENV_SIZE			SZ_8K
++
++/*
++ * If want to use nand, define CONFIG_NAND_MXS and rework board
++ * to support nand, since emmc has pin conflicts with nand
++ */
++#ifdef CONFIG_NAND_MXS
++/* NAND stuff */
++#define CONFIG_SYS_MAX_NAND_DEVICE	1
++#define CONFIG_SYS_NAND_BASE		0x40000000
++#define CONFIG_SYS_NAND_5_ADDR_CYCLE
++#define CONFIG_SYS_NAND_ONFI_DETECTION
++
++/* DMA stuff, needed for GPMI/MXS NAND support */
++#define CONFIG_APBH_DMA
++#define CONFIG_APBH_DMA_BURST
++#define CONFIG_APBH_DMA_BURST8
++#endif
++
++#define CONFIG_ENV_OFFSET		(12 * SZ_64K)
++#ifdef CONFIG_NAND_MXS
++#define CONFIG_SYS_FSL_USDHC_NUM	1
++#else
++#define CONFIG_SYS_FSL_USDHC_NUM	2
++#endif
++
++#define CONFIG_SYS_MMC_ENV_DEV		0   /* USDHC1 */
++#define CONFIG_SYS_MMC_ENV_PART		0	/* user area */
++#define CONFIG_MMCROOT			"/dev/mmcblk0p2"  /* USDHC1 */
++
++/* USB Configs */
++#define CONFIG_MXC_USB_PORTSC  (PORT_PTS_UTMI | PORT_PTS_PTW)
++
++#define CONFIG_IMX_THERMAL
++
++#define CONFIG_USBD_HS
++
++#define CONFIG_USB_FUNCTION_MASS_STORAGE
++
++#ifdef CONFIG_VIDEO
++#define CONFIG_VIDEO_MXS
++#define CONFIG_VIDEO_LOGO
++#define CONFIG_SPLASH_SCREEN
++#define CONFIG_SPLASH_SCREEN_ALIGN
++#define CONFIG_BMP_16BPP
++#define CONFIG_VIDEO_BMP_RLE8
++#define CONFIG_VIDEO_BMP_LOGO
++#endif
++
++#ifdef CONFIG_FSL_QSPI
++#define CONFIG_SPI_FLASH
++#define CONFIG_SPI_FLASH_MACRONIX
++#define CONFIG_SPI_FLASH_BAR
++#define CONFIG_SF_DEFAULT_BUS		0
++#define CONFIG_SF_DEFAULT_CS		0
++#define CONFIG_SF_DEFAULT_SPEED		40000000
++#define CONFIG_SF_DEFAULT_MODE		SPI_MODE_0
++#define FSL_QSPI_FLASH_NUM		1
++#define FSL_QSPI_FLASH_SIZE		SZ_64M
++#define QSPI0_BASE_ADDR			QSPI1_IPS_BASE_ADDR
++#define QSPI0_AMBA_BASE			QSPI0_ARB_BASE_ADDR
++#endif
++
++#endif	/* __CONFIG_H */
+-- 
+2.17.1
+

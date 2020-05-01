@@ -61,4 +61,63 @@ other layers needed. e.g.:
 II. Misc
 ========
 
---- replace with specific information about the bsp-custom layer ---
+Linux Kernel
+
+
+u-boot
+1. Create the board file,
+2. Create the board Kconfig file,
+3. Create the board Makefile,
+4. Create the board defconfig,
+5. Create the board header file,
+6. Source board’s Kconfig in the architecture’s Kconfig,
+7. Define the TARGET Kconfig option in its CPU’s Kconfig,
+
+[x] mkdir -p recipes-bsp/u-boot
+[x] echo "FILESEXTRAPATHS_prepend := "${THISDIR}/${PN}:"" > recipes-bsp/u-boot/u-boot_%.bbappend
+[x] echo "COMPATIBLE_MACHINE = "(mx6|mx7|imx7dsabre-custom)"" >> recipes-bsp/u-boot/u-boot_%.bbappend
+[x] bitbake vitual/bootloader  #do it in yocto sourced environment
+
+Now start adding custom board to u-boot sources
+[x] cd tmp/work/$MACHINE-$DISTRO-linux-gnueabi/u-boot-fslc/v2017.11+gitAUTOINC+a07698f0bf-r0/git
+[x] mkdir board/imx7dsabre-custom
+
+1. Create the board file,
+[x] cp -v board/freescale/mx7dsabresd/mx7dsabresd.c board/imx7dsabre-custom/imx7dsabre-custom.c
+
+2. Create the board Kconfig file,
+[x] echo -e "if TARGET_IMX7DSABRE-CUSTOM\n\n" > board/imx7dsabre-custom/Kconfig
+[x] echo -e "config SYS_BOARD\n" >> board/imx7dsabre-custom/Kconfig
+[x] echo -e "        default "imx7dsabre-custom"\n\n" >> board/imx7dsabre-custom/Kconfig
+[x] echo -e "config SYS_CONFIG_NAME\n" >> board/imx7dsabre-custom/Kconfig
+[x] echo -e "        default "imx7dsabre-custom"\n\n" >> board/imx7dsabre-custom/Kconfig
+[x] echo -e "endif\n" >> board/imx7dsabre-custom/Kconfig
+
+3. Create the board Makefile,
+[x] echo "obj-y  := imx7dsabre-custom.o" > board/imx7dsabre-custom/Makefile
+
+4. Create the board defconfig,
+[x] cp -v configs/mx7dsabresd_defconfig configs/imx7dsabre-custom_defconfig
+[x] Modify CONFIG_DEFAULT_DEVICE_TREE="imx7d-sdb" --> CONFIG_DEFAULT_DEVICE_TREE="imx7dsabre-custom"
+[x] cp -v board/freescale/mx7dsabresd/imximage.cfg board/imx7dsabre-custom/imximage.cfg
+[x] Modify CONFIG_SYS_EXTRA_OPTIONS="IMX_CONFIG=board/imx7dsabre-custom/imximage.cfg"
+
+5. Create the board header file,
+[x] cp -v include/configs/mx7dsabresd.h include/configs/imx7dsabre-custom.h
+
+6. Source board’s Kconfig in the architecture’s Kconfig,
+[x] Add following lines to "arch/arm/mach-imx/mx7/Kconfig" file at appropriate place
+    (you will understand where to place this by looking at how others have placed it)
+
+source "board/imx7dsabre-custom/Kconfig"
+
+7. Define the TARGET Kconfig option in its CPU’s Kconfig,
+[x] Add following lines to "arch/arm/mach-imx/mx7/Kconfig" file at appropriate place
+    (you will understand where to place this by looking at how others have placed it)
+
+config TARGET_IMX7DSABRE-CUSTOM
+        bool "imx7dsabre-custom"
+        select BOARD_LATE_INIT
+        select MX7D
+        select DM
+        select DM_THERMAL
