@@ -121,3 +121,7 @@ config TARGET_IMX7DSABRE-CUSTOM
         select MX7D
         select DM
         select DM_THERMAL
+ 
+ 8. Build u-boot
+ [x] make CROSS_COMPILE=$CROSS_COMPILE CC=$CC <target_defconfig>
+ [x] make CROSS_COMPILE=$CROSS_COMPILE CC=$CC <target>
